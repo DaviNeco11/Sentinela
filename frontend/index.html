@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Sentinela — Formulário de Prontuário (Acadêmico)</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+  <main class="container">
+    <header class="header">
+      <h1>Sentinela</h1>
+      <p>
+        Formulário acadêmico para estruturar um prontuário e enviar para análise.
+        Evite inserir dados pessoais reais.
+      </p>
+    </header>
+
+    <form id="prontuarioForm" class="card">
+      <!-- Metadados gerais (sem PII) -->
+      <section class="grid">
+        <div>
+          <label for="ageGroup">Faixa etária (aprox.)</label>
+          <select id="ageGroup" name="ageGroup">
+            <option value="">(não informar)</option>
+            <option value="crianca">Criança</option>
+            <option value="adolescente">Adolescente</option>
+            <option value="adulto">Adulto</option>
+            <option value="idoso">Idoso</option>
+          </select>
+          <div class="hint">Use apenas contexto geral (sem idade exata, sem nome).</div>
+        </div>
+
+        <div>
+          <label for="visitType">Tipo de atendimento</label>
+          <select id="visitType" name="visitType">
+            <option value="">(não informar)</option>
+            <option value="urgencia">Urgência/Emergência</option>
+            <option value="ambulatorio">Ambulatório</option>
+            <option value="retorno">Retorno</option>
+          </select>
+        </div>
+
+        <!-- Seções do prontuário -->
+        <div class="full">
+          <label for="chiefComplaint">Queixa principal</label>
+          <textarea id="chiefComplaint" name="chiefComplaint"
+            placeholder="Ex.: motivo principal da consulta (texto livre)."></textarea>
+        </div>
+
+        <div class="full">
+          <label for="anamnesis">Anamnese / História</label>
+          <textarea id="anamnesis" name="anamnesis"
+            placeholder="Ex.: contexto, histórico, relatos (texto livre)."></textarea>
+        </div>
+
+        <div class="full">
+          <label for="evolution">Evolução / Atendimento</label>
+          <textarea id="evolution" name="evolution"
+            placeholder="Ex.: observações e condutas no atendimento atual (texto livre)."></textarea>
+        </div>
+
+        <div class="full">
+          <label for="observations">Observações</label>
+          <textarea id="observations" name="observations"
+            placeholder="Ex.: sinais indiretos, encaminhamentos, observações gerais."></textarea>
+        </div>
+
+        <div class="full">
+          <label for="background">Antecedentes</label>
+          <textarea id="background" name="background"
+            placeholder="Ex.: antecedentes relevantes (texto livre)."></textarea>
+        </div>
+      </section>
+
+      <section class="actions">
+        <!-- Botões: o comportamento está no app.js -->
+        <button type="button" id="btnGenerate">Gerar JSON</button>
+        <button type="button" class="primary" id="btnSend">Enviar para API</button>
+      </section>
+
+      <div class="status" id="status" aria-live="polite"></div>
+    </form>
+
+    <section class="card">
+      <h2>Saída / Preview</h2>
+      <pre id="jsonPreview">{}</pre>
+    </section>
+  </main>
+
+  <!-- JS separado (responsabilidade única: lógica da página) -->
+  <script src="app.js"></script>
+</body>
+</html>
