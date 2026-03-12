@@ -1,25 +1,3 @@
-"""
-Sentinela - Serviço de análise do prontuário
-
-Objetivo deste arquivo:
-- Orquestrar o fluxo principal de análise do prontuário
-- Transformar o payload recebido em texto analisável
-- Montar o prompt a ser enviado ao modelo Gaia
-- Chamar o serviço de integração com o Gaia
-- Padronizar a resposta no formato esperado pela API
-
-Observação acadêmica:
-Este projeto é desenvolvido para fins de estudo e aprendizado.
-O objetivo deste serviço é apoiar a experimentação de análise textual
-em prontuários simulados, sem qualquer finalidade diagnóstica.
-
-Princípios SOLID aplicados:
-- S (Single Responsibility): esta classe cuida da lógica de análise
-- O (Open/Closed): novas estratégias de prompt e pós-processamento podem ser adicionadas
-- D (Dependency Inversion): o serviço depende de uma abstração prática de integração
-  (GaiaService), em vez de lidar diretamente com HTTP
-"""
-
 from __future__ import annotations
 
 from typing import Any, Dict, List

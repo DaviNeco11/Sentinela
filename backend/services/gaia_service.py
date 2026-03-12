@@ -1,195 +1,170 @@
 """
-Sentinela - Schemas de prontuário e resposta da análise
+Sentinela - Serviço de integração com o modelo Gaia
 
 Objetivo deste arquivo:
-- Definir os modelos de dados utilizados pela API
-- Validar a estrutura do prontuário recebido
-- Padronizar a resposta da análise
-- Melhorar legibilidade e segurança do código
+- Centralizar a comunicação com o modelo de linguagem Gaia
+- Enviar prompts para o modelo
+- Receber e interpretar a resposta
+- Extrair o JSON retornado pelo modelo
+- Tratar erros de integração de forma controlada
 
 Observação acadêmica:
 Este projeto é desenvolvido para fins de estudo e aprendizado.
-Aqui utilizamos Pydantic para modelar e validar dados,
-o que é muito comum em APIs Python modernas.
+O modelo Gaia é utilizado aqui como apoio experimental para identificação
+de possíveis indícios textuais, sem qualquer finalidade diagnóstica.
 
 Princípios SOLID aplicados:
-- S (Single Responsibility): este arquivo cuida apenas dos contratos de dados
-- O (Open/Closed): novos campos podem ser adicionados sem alterar a lógica principal
-- I (Interface Segregation): cada classe representa uma estrutura específica e enxuta
+- S (Single Responsibility): este arquivo cuida apenas da integração com o Gaia
+- O (Open/Closed): a integração pode ser expandida sem alterar outras camadas
+- D (Dependency Inversion): a camada de análise dependerá deste serviço,
+  em vez de lidar diretamente com HTTP e detalhes da API externa
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+import json
+from typing import Any, Dict
 
-from pydantic import BaseModel, Field, model_validator
+import httpx
+
+from backend.core.config import settings
 
 
-class ProntuarioInput(BaseModel):
+class GaiaService:
     """
-    Modelo de entrada do prontuário.
+    Serviço responsável por consultar o modelo Gaia.
 
-    Este schema representa o payload recebido pelo backend.
-    O frontend pode enviar o prontuário de duas formas:
+    Esta classe encapsula:
+    - a URL do modelo
+    - o nome do modelo
+    - o timeout
+    - o formato da requisição HTTP
+    - o tratamento da resposta
 
-    1) text:
-       Um texto único contendo todo o prontuário
-
-    2) sections:
-       Um dicionário com seções separadas do prontuário,
-       como queixa principal, anamnese, evolução etc.
-
-    metadata:
-       Informações complementares, como faixa etária e tipo de atendimento
-
-    Observação:
-    O sistema exige que pelo menos 'text' ou 'sections' seja informado.
+    Vantagem:
+    Se amanhã o Gaia mudar de endpoint ou formato, a alteração ficará
+    concentrada neste arquivo, sem impactar as demais camadas.
     """
 
-    text: Optional[str] = Field(
-        default=None,
-        description="Texto completo do prontuário, quando enviado em formato livre."
-    )
-
-    sections: Optional[Dict[str, str]] = Field(
-        default=None,
-        description="Prontuário organizado por seções, como anamnese e evolução."
-    )
-
-    metadata: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="Metadados complementares do prontuário, sem dados pessoais identificáveis."
-    )
-
-    @model_validator(mode="after")
-    def validate_content(self) -> "ProntuarioInput":
+    def __init__(self) -> None:
         """
-        Validador de negócio do schema.
-
-        Responsabilidade:
-        Garantir que o payload tenha conteúdo útil para análise.
-
-        Regra:
-        - deve existir 'text' preenchido
-          OU
-        - deve existir ao menos uma seção preenchida em 'sections'
-
-        Isso evita que a API receba objetos vazios.
+        Inicializa o serviço usando as configurações centrais do projeto.
         """
-        has_text = bool(self.text and self.text.strip())
+        self.api_url = settings.GAIA_API_URL
+        self.model_name = settings.GAIA_MODEL_NAME
+        self.timeout_seconds = settings.GAIA_TIMEOUT_SECONDS
 
-        has_sections = False
-        if self.sections:
-            # Verifica se existe ao menos um valor de seção não vazio
-            has_sections = any(
-                bool(value and value.strip())
-                for value in self.sections.values()
+    async def generate(self, prompt: str) -> Dict[str, Any]:
+        """
+        Envia um prompt ao modelo Gaia e retorna a resposta já convertida em dicionário.
+
+        Fluxo:
+        1. Monta o payload HTTP
+        2. Envia POST para a API do Gaia
+        3. Valida o status HTTP
+        4. Lê o campo textual da resposta
+        5. Extrai o JSON produzido pelo modelo
+        6. Retorna o conteúdo parseado
+        """
+        request_payload = self._build_request_payload(prompt)
+        raw_response_text = await self._send_request(request_payload)
+        parsed_response = self._extract_json_from_response(raw_response_text)
+        return parsed_response
+
+    def _build_request_payload(self, prompt: str) -> Dict[str, Any]:
+        """
+        Monta o corpo da requisição HTTP para o Gaia.
+
+        Neste MVP, assumimos um formato semelhante a:
+        {
+          "model": "gaia:latest",
+          "prompt": "...",
+          "stream": false
+        }
+        """
+        return {
+            "model": self.model_name,
+            "prompt": prompt,
+            "stream": False,
+        }
+
+    async def _send_request(self, payload: Dict[str, Any]) -> str:
+        """
+        Envia a requisição HTTP para o Gaia e retorna o texto bruto da resposta.
+
+        Esta função:
+        - abre um cliente HTTP assíncrono
+        - envia a requisição POST
+        - valida o status HTTP
+        - extrai o campo textual esperado da resposta
+        """
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+                response = await client.post(self.api_url, json=payload)
+        except httpx.RequestError as exc:
+            raise RuntimeError(
+                f"Erro de conexão ao acessar o Gaia em '{self.api_url}': {exc}"
+            ) from exc
+
+        if response.status_code != 200:
+            raise RuntimeError(
+                "Falha ao consultar o Gaia. "
+                f"Status HTTP: {response.status_code}. "
+                f"Resposta: {response.text}"
             )
 
-        if not has_text and not has_sections:
-            raise ValueError(
-                "É necessário informar 'text' ou ao menos uma seção preenchida em 'sections'."
+        try:
+            response_data = response.json()
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                "A API do Gaia respondeu, mas o corpo HTTP não é um JSON válido."
+            ) from exc
+
+        # Muitos servidores de LLM devolvem a saída textual no campo "response"
+        raw_text = response_data.get("response")
+
+        if not raw_text or not isinstance(raw_text, str):
+            raise RuntimeError(
+                "A resposta do Gaia não contém um campo textual 'response' válido."
             )
 
-        return self
+        return raw_text
 
-
-class EvidenceSnippet(BaseModel):
-    """
-    Modelo que representa uma evidência textual identificada na análise.
-
-    Cada evidência contém:
-    - label: categoria do possível indício
-    - snippet: trecho do texto relacionado ao indício
-    - explanation: breve explicação do porquê esse trecho foi considerado relevante
-
-    Exemplo:
-    {
-      "label": "violencia_domestica",
-      "snippet": "relata agressões frequentes do companheiro",
-      "explanation": "há menção explícita a agressões no ambiente doméstico"
-    }
-    """
-
-    label: str = Field(
-        ...,
-        description="Categoria do indício identificado."
-    )
-
-    snippet: str = Field(
-        ...,
-        description="Trecho textual que sustenta o possível indício."
-    )
-
-    explanation: str = Field(
-        ...,
-        description="Explicação curta sobre a relevância do trecho."
-    )
-
-
-class AnalysisResult(BaseModel):
-    """
-    Modelo de saída da análise realizada pelo backend.
-
-    Este schema padroniza o retorno para o frontend.
-
-    Campos:
-    - labels: lista de categorias encontradas
-    - risk_score: escore numérico entre 0 e 1
-    - severity: classificação qualitativa do risco
-    - summary: resumo textual da análise
-    - evidence_snippets: evidências encontradas
-    - model_version: identifica o modelo/estratégia usada
-
-    Observação:
-    Mesmo quando não houver indícios, a resposta deve seguir esta estrutura.
-    """
-
-    labels: List[str] = Field(
-        default_factory=list,
-        description="Lista de categorias de possíveis indícios identificados."
-    )
-
-    risk_score: float = Field(
-        default=0.0,
-        description="Escore de risco entre 0 e 1."
-    )
-
-    severity: str = Field(
-        default="baixo",
-        description="Classificação qualitativa do risco: baixo, moderado ou alto."
-    )
-
-    summary: str = Field(
-        default="",
-        description="Resumo geral da análise."
-    )
-
-    evidence_snippets: List[EvidenceSnippet] = Field(
-        default_factory=list,
-        description="Lista de evidências textuais relacionadas aos indícios."
-    )
-
-    model_version: str = Field(
-        default="unknown",
-        description="Identificação da versão do modelo ou pipeline utilizado."
-    )
-
-    @model_validator(mode="after")
-    def validate_result(self) -> "AnalysisResult":
+    def _extract_json_from_response(self, raw_text: str) -> Dict[str, Any]:
         """
-        Validador para manter consistência mínima na resposta.
+        Extrai um JSON válido do texto retornado pelo modelo.
 
-        Regras aplicadas:
-        - risk_score deve ficar entre 0 e 1
-        - severity deve ser 'baixo', 'moderado' ou 'alto'
-
-        Caso valores inválidos cheguem aqui, o schema rejeita o objeto.
+        Estratégia:
+        1. tenta converter a resposta inteira em JSON
+        2. se falhar, busca o trecho entre o primeiro '{' e o último '}'
+        3. tenta converter esse trecho em JSON
         """
-        if not (0.0 <= self.risk_score <= 1.0):
-            raise ValueError("risk_score deve estar entre 0 e 1.")
+        try:
+            parsed = json.loads(raw_text)
+            if isinstance(parsed, dict):
+                return parsed
+            raise RuntimeError("O JSON retornado pelo Gaia não é um objeto válido.")
+        except json.JSONDecodeError:
+            pass
 
-        if self.severity not in {"baixo", "moderado", "alto"}:
-            raise ValueError("severity deve ser 'baixo', 'moderado' ou 'alto'.")
+        start = raw_text.find("{")
+        end = raw_text.rfind("}")
 
-        return self
+        if start == -1 or end == -1 or end <= start:
+            raise RuntimeError(
+                "Não foi possível localizar um bloco JSON válido na resposta do Gaia."
+            )
+
+        candidate_json = raw_text[start:end + 1]
+
+        try:
+            parsed = json.loads(candidate_json)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                "Foi localizado um possível bloco JSON, mas ele não pôde ser convertido."
+            ) from exc
+
+        if not isinstance(parsed, dict):
+            raise RuntimeError("O conteúdo extraído do Gaia não é um objeto JSON válido.")
+
+        return parsed
