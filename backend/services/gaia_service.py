@@ -53,7 +53,8 @@ class GaiaService:
         self.api_url = settings.GAIA_API_URL
         self.model_name = settings.GAIA_MODEL_NAME
         self.timeout_seconds = settings.GAIA_TIMEOUT_SECONDS
-
+        print("Modelo configurado no Sentinela:", self.model_name)
+        print("URL configurada:", self.api_url)
     async def generate(self, prompt: str) -> Dict[str, Any]:
         """
         Envia um prompt ao modelo Gaia e retorna a resposta já convertida em dicionário.

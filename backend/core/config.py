@@ -79,7 +79,7 @@ class Settings:
         # gaia:latest
         self.GAIA_MODEL_NAME = os.getenv(
             "GAIA_MODEL_NAME",
-            "gaia:latest"
+            "brunoconterato/Gemma-3-Gaia-PT-BR-4b-it:f16"
         )
 
         # Timeout da chamada ao modelo, em segundos
